@@ -182,3 +182,14 @@
     border-right-color: var(--border);
   }
 }
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+}
+
+.globe-stage {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
