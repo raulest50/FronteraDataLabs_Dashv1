@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import {
+  ArcGisMapServerImageryProvider,
   Cartesian3,
   createOsmBuildingsAsync,
+  EllipsoidTerrainProvider,
   ImageryLayer,
   Ion,
   Math as CesiumMath,
-  OpenStreetMapImageryProvider,
   Terrain,
   Viewer
 } from 'cesium';
@@ -22,50 +23,55 @@ export default function Globe() {
       const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
       if (ionToken) {
         Ion.defaultAccessToken = ionToken;
-      } else {
-        console.warn(
-          'VITE_CESIUM_ION_TOKEN no esta definido. El terreno global y los edificios de Cesium pueden fallar.'
-        );
       }
 
-      // Initialize the Cesium Viewer in the HTML element with the cesiumContainer ref
-      const viewer = new Viewer(cesiumContainerRef.current!, {
-        baseLayer: ImageryLayer.fromProviderAsync(
-          Promise.resolve(
-            new OpenStreetMapImageryProvider({
-              url: 'https://tile.openstreetmap.org/',
-            })
-          )
-        ),
-        baseLayerPicker: false,
-        terrain: Terrain.fromWorldTerrain(),
-      });
+      try {
+        const viewerOptions = {
+          baseLayer: ImageryLayer.fromProviderAsync(
+            ArcGisMapServerImageryProvider.fromUrl(
+              'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
+            )
+          ),
+          baseLayerPicker: false,
+          ...(ionToken
+            ? { terrain: Terrain.fromWorldTerrain() }
+            : { terrainProvider: new EllipsoidTerrainProvider() }),
+        };
 
-      viewerRef.current = viewer;
+        const viewer = new Viewer(cesiumContainerRef.current!, viewerOptions);
 
-      // Fly the camera to San Francisco at the given longitude, latitude, and height.
-      // Puedes cambiar las coordenadas a Bogotá: (-74.0721, 4.7110, 400)
-      viewer.camera.flyTo({
-        destination: Cartesian3.fromDegrees(-122.4175, 37.655, 400),
-        orientation: {
-          heading: CesiumMath.toRadians(0.0),
-          pitch: CesiumMath.toRadians(-15.0),
+        viewerRef.current = viewer;
+
+        viewer.camera.flyTo({
+          destination: Cartesian3.fromDegrees(-122.4175, 37.655, 400),
+          orientation: {
+            heading: CesiumMath.toRadians(0.0),
+            pitch: CesiumMath.toRadians(-15.0),
+          }
+        });
+
+        if (!ionToken) {
+          console.warn(
+            'VITE_CESIUM_ION_TOKEN no esta definido. Se usa globo base sin terreno mundial ni edificios OSM.'
+          );
+          return;
         }
-      });
 
-      // Add Cesium OSM Buildings, a global 3D buildings layer.
-      const buildingTileset = await createOsmBuildingsAsync({
-        enableShowOutline: false,
-        showOutline: false,
-      });
-      if (viewerRef.current && !viewerRef.current.isDestroyed()) {
-        viewerRef.current.scene.primitives.add(buildingTileset);
+        const buildingTileset = await createOsmBuildingsAsync({
+          enableShowOutline: false,
+          showOutline: false,
+        });
+
+        if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+          viewerRef.current.scene.primitives.add(buildingTileset);
+        }
+      } catch (error) {
+        console.error('Error inicializando Cesium:', error);
       }
     };
 
     initViewer();
 
-    // Cleanup on component unmount
     return () => {
       if (viewerRef.current) {
         viewerRef.current.destroy();
