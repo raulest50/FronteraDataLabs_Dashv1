@@ -193,3 +193,39 @@
   min-height: 100vh;
   overflow: hidden;
 }
+
+.questdb-status-overlay {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.questdb-status-card {
+  width: min(360px, calc(100vw - 48px));
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(9, 17, 27, 0.82), rgba(9, 17, 27, 0.6));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #f4f7fb;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+}
+
+.questdb-status-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.questdb-status-card p {
+  color: rgba(235, 242, 250, 0.82);
+}
+
+.questdb-status-card-error {
+  border-color: rgba(255, 160, 132, 0.32);
+  color: #ffe2d8;
+}

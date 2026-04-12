@@ -2,19 +2,76 @@ import { useEffect, useRef } from 'react';
 import {
   ArcGisMapServerImageryProvider,
   Cartesian3,
+  Color,
   createOsmBuildingsAsync,
+  CustomDataSource,
+  defined,
   EllipsoidTerrainProvider,
+  Entity,
+  HeightReference,
   ImageryLayer,
   Ion,
   Math as CesiumMath,
+  ScreenSpaceEventHandler,
+  ScreenSpaceEventType,
   Terrain,
   Viewer
 } from 'cesium';
+import type { DeploymentNode } from '../data/questdb';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
-export default function Globe() {
+type GlobeProps = {
+  nodes?: DeploymentNode[];
+  selectedDeploymentId?: string | null;
+  onNodeSelect?: (deploymentId: string) => void;
+};
+
+export default function Globe({
+  nodes = [],
+  selectedDeploymentId = null,
+  onNodeSelect,
+}: GlobeProps) {
   const cesiumContainerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
+  const nodeDataSourceRef = useRef<CustomDataSource | null>(null);
+  const clickHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
+  const onNodeSelectRef = useRef(onNodeSelect);
+
+  useEffect(() => {
+    onNodeSelectRef.current = onNodeSelect;
+  }, [onNodeSelect]);
+
+  const syncNodes = () => {
+    const dataSource = nodeDataSourceRef.current;
+    if (!dataSource) return;
+
+    dataSource.entities.removeAll();
+
+    nodes.forEach((node) => {
+      const isSelected = node.deploymentId === selectedDeploymentId;
+
+      dataSource.entities.add({
+        id: node.deploymentId,
+        position: Cartesian3.fromDegrees(node.longitude, node.latitude, 12),
+        properties: {
+          deploymentId: node.deploymentId,
+          boardId: node.boardId,
+          locationName: node.locationName,
+          kind: 'measurement-node',
+        },
+        point: {
+          pixelSize: isSelected ? 18 : 13,
+          color: isSelected
+            ? Color.fromCssColorString('#7df9ff')
+            : Color.fromCssColorString('#ffb84d'),
+          outlineColor: Color.fromCssColorString('#0b0f14'),
+          outlineWidth: isSelected ? 3 : 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          heightReference: HeightReference.CLAMP_TO_GROUND,
+        },
+      });
+    });
+  };
 
   useEffect(() => {
     if (!cesiumContainerRef.current) return;
@@ -39,8 +96,29 @@ export default function Globe() {
         };
 
         const viewer = new Viewer(cesiumContainerRef.current!, viewerOptions);
+        const nodeDataSource = new CustomDataSource('measurement-nodes');
 
         viewerRef.current = viewer;
+        nodeDataSourceRef.current = nodeDataSource;
+        await viewer.dataSources.add(nodeDataSource);
+
+        clickHandlerRef.current = new ScreenSpaceEventHandler(viewer.scene.canvas);
+        clickHandlerRef.current.setInputAction((movement: ScreenSpaceEventHandler.PositionedEvent) => {
+          const picked = viewer.scene.pick(movement.position);
+
+          if (!defined(picked) || !(picked.id instanceof Entity)) {
+            return;
+          }
+
+          const entity = picked.id;
+          const deploymentId = entity.properties?.deploymentId?.getValue(
+            viewer.clock.currentTime
+          );
+
+          if (typeof deploymentId === 'string') {
+            onNodeSelectRef.current?.(deploymentId);
+          }
+        }, ScreenSpaceEventType.LEFT_CLICK);
 
         viewer.camera.flyTo({
           destination: Cartesian3.fromDegrees(-122.4175, 37.655, 400),
@@ -49,6 +127,8 @@ export default function Globe() {
             pitch: CesiumMath.toRadians(-15.0),
           }
         });
+
+        syncNodes();
 
         if (!ionToken) {
           console.warn(
@@ -73,12 +153,23 @@ export default function Globe() {
     initViewer();
 
     return () => {
+      if (clickHandlerRef.current) {
+        clickHandlerRef.current.destroy();
+        clickHandlerRef.current = null;
+      }
+
       if (viewerRef.current) {
         viewerRef.current.destroy();
         viewerRef.current = null;
       }
+
+      nodeDataSourceRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    syncNodes();
+  }, [nodes, selectedDeploymentId]);
 
   return (
     <div
