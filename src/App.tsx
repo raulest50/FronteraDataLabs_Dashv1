@@ -3,12 +3,14 @@ import './App.css';
 import type {
   DeploymentDetail,
   DeploymentNode,
+  OrphanTelemetrySummary,
   TelemetryPoint,
 } from './data/questdb';
 import {
   fetchDeploymentDetail,
   fetchDeployments,
   fetchDeploymentTelemetry,
+  fetchOrphanTelemetrySummary,
 } from './data/questdb';
 import Globe from './components/Globe.tsx';
 import InfoOverlay from './components/InfoOverlay.tsx';
@@ -24,6 +26,9 @@ function App() {
   const [selectedSeries, setSelectedSeries] = useState<TelemetryPoint[]>([]);
   const [panelLoading, setPanelLoading] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [orphanSummary, setOrphanSummary] = useState<OrphanTelemetrySummary | null>(
+    null
+  );
 
   const selectedNode = nodes.find(
     (node) => node.deploymentId === selectedDeploymentId
@@ -37,10 +42,23 @@ function App() {
       setNodesError(null);
 
       try {
-        const deployments = await fetchDeployments();
+        const [deploymentsResult, orphanResult] = await Promise.allSettled([
+          fetchDeployments(),
+          fetchOrphanTelemetrySummary(),
+        ]);
         if (cancelled) return;
 
-        setNodes(deployments);
+        if (deploymentsResult.status !== 'fulfilled') {
+          throw deploymentsResult.reason;
+        }
+
+        setNodes(deploymentsResult.value);
+
+        if (orphanResult.status === 'fulfilled') {
+          setOrphanSummary(orphanResult.value);
+        } else {
+          setOrphanSummary(null);
+        }
       } catch (error) {
         if (cancelled) return;
 
@@ -61,6 +79,30 @@ function App() {
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshOrphanSummary = async () => {
+      try {
+        const summary = await fetchOrphanTelemetrySummary();
+        if (!cancelled) {
+          setOrphanSummary(summary);
+        }
+      } catch {
+        if (!cancelled) {
+          setOrphanSummary(null);
+        }
+      }
+    };
+
+    const intervalId = window.setInterval(refreshOrphanSummary, 30000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -128,6 +170,26 @@ function App() {
             description="Bienvenido al sistema de telemetria mundial."
             onClose={() => setIsOverlayVisible(false)}
           />
+        ) : null}
+
+        {orphanSummary && orphanSummary.orphanTelemetryCount > 0 ? (
+          <div className="orphan-status-overlay" aria-live="polite">
+            <div className="orphan-status-card">
+              <strong>Telemetria pendiente de reconciliar</strong>
+              <p>
+                Se recibieron datos de {orphanSummary.orphanTelemetryCount}{' '}
+                deployment
+                {orphanSummary.orphanTelemetryCount === 1 ? '' : 's'} sin registro
+                valido en backend.
+              </p>
+              {orphanSummary.orphanDeploymentIds.length > 0 ? (
+                <p>
+                  IDs recientes: {orphanSummary.orphanDeploymentIds.join(', ')}.
+                  El nodo deberia resincronizar su deployment.
+                </p>
+              ) : null}
+            </div>
+          </div>
         ) : null}
 
         {selectedDeploymentId ? (

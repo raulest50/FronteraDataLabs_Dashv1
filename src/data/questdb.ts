@@ -23,6 +23,11 @@ export type TelemetryPoint = {
   rh: number | null;
 };
 
+export type OrphanTelemetrySummary = {
+  orphanTelemetryCount: number;
+  orphanDeploymentIds: string[];
+};
+
 function getApiBaseUrl() {
   const configuredUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 
@@ -79,4 +84,8 @@ export async function fetchDeploymentTelemetry(
   return apiGet<TelemetryPoint[]>(
     `/api/deployments/${encodeURIComponent(deploymentId)}/telemetry?hours=${safeWindow}`
   );
+}
+
+export async function fetchOrphanTelemetrySummary() {
+  return apiGet<OrphanTelemetrySummary>('/api/iot/orphans');
 }
